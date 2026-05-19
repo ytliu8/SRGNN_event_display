@@ -1552,13 +1552,35 @@ var PAGE_SIZE = 10;
 var currentPage = 1;
 var totalPages = 10;
 
-// ── Vertex diamond: uniform per-view size boost ──────────────────────────
-// With scene aspectmode='data', Plotly already keeps pixels-per-meter
-// roughly equal across all axes when the axis ranges change (the scene's
-// aspectratio recomputes from data ranges on relayout). So a symmetric
-// mesh built in data coords renders symmetrically on screen in any view.
-// We only apply a uniform size boost in the zoom view so the diamond
-// stays visually prominent when the user zooms into the Upgrade region.
+// ── Vertex diamond: per-view axis-compensating size ──────────────────────
+// Scene aspectmode='data' locks its aspectratio at page load (from the
+// initial full-detector ranges, which are a cube). When the "Zoom to
+// Upgrade" button later relayouts only the axis ranges, per-axis visual
+// scaling diverges: 1 m along z no longer covers the same pixels as 1 m
+// along x/y, so a symmetric mesh built in data coords stretches in the
+// horizontal axes. To keep the diamond visually cubic AND the same
+// on-screen size across views, rebuild the 14 mesh vertices with per-
+// axis half-extents proportional to each axis's range fraction relative
+// to the full-view range — so visual_extent_k = size_k / range_k stays
+// constant in pixels.
+function getViewSpans(viewName) {
+  var fig = ALL_FIGURES[currentEvent];
+  if (!fig || !fig.layout || !fig.layout.updatemenus) return null;
+  var needle = (viewName === 'zoom') ? 'Zoom' : 'Full';
+  for (var i = 0; i < fig.layout.updatemenus.length; i++) {
+    var menu = fig.layout.updatemenus[i];
+    for (var j = 0; j < menu.buttons.length; j++) {
+      var btn = menu.buttons[j];
+      if (btn.label && btn.label.indexOf(needle) >= 0) {
+        var a = btn.args[0];
+        var xr = a['scene.xaxis.range'], yr = a['scene.yaxis.range'], zr = a['scene.zaxis.range'];
+        if (!xr || !yr || !zr) return null;
+        return { x: xr[1] - xr[0], y: yr[1] - yr[0], z: zr[1] - zr[0] };
+      }
+    }
+  }
+  return null;
+}
 function findVertexTraceIndex() {
   var plotEl = document.getElementById('plot-container');
   if (!plotEl.data) return -1;
@@ -1574,25 +1596,31 @@ function applyDiamondForView(viewName) {
   if (vi < 0 || !currentEvent) return;
   var v = VERTEX_INFO[currentEvent];
   if (!v) return;
-  var zoomBoost = (viewName === 'zoom') ? 1.6 : 1.0;
-  var s = VERTEX_BASE_SIZE * zoomBoost;
+  var full = getViewSpans('full');
+  var view = getViewSpans(viewName);
+  var sx = VERTEX_BASE_SIZE, sy = VERTEX_BASE_SIZE, sz = VERTEX_BASE_SIZE;
+  if (full && view) {
+    sx = VERTEX_BASE_SIZE * view.x / full.x;
+    sy = VERTEX_BASE_SIZE * view.y / full.y;
+    sz = VERTEX_BASE_SIZE * view.z / full.z;
+  }
   var vx = v[0], vy = v[1], vz = v[2];
   // Vertex order matches Python _build_3d_diamond (6 spike apexes + 8 inner
-  // cube corners = 14 vertices). Inner cube half-edge = size / 3.5.
+  // cube corners = 14 vertices). Inner cube half-edge = size / 3.5 per axis.
   // 0..5  apexes: +x, -x, +y, -y, +z, -z
   // 6..13 cube corners, index 6 + (sx*4 + sy*2 + sz) with s* = 0 for +
-  var i = s / 3.5;
+  var ix = sx / 3.5, iy = sy / 3.5, iz = sz / 3.5;
   var x = [
-    vx + s, vx - s, vx,     vx,     vx,     vx,
-    vx + i, vx + i, vx + i, vx + i, vx - i, vx - i, vx - i, vx - i
+    vx + sx, vx - sx, vx,      vx,      vx,      vx,
+    vx + ix, vx + ix, vx + ix, vx + ix, vx - ix, vx - ix, vx - ix, vx - ix
   ];
   var y = [
-    vy,     vy,     vy + s, vy - s, vy,     vy,
-    vy + i, vy + i, vy - i, vy - i, vy + i, vy + i, vy - i, vy - i
+    vy,      vy,      vy + sy, vy - sy, vy,      vy,
+    vy + iy, vy + iy, vy - iy, vy - iy, vy + iy, vy + iy, vy - iy, vy - iy
   ];
   var z = [
-    vz,     vz,     vz,     vz,     vz + s, vz - s,
-    vz + i, vz - i, vz + i, vz - i, vz + i, vz - i, vz + i, vz - i
+    vz,      vz,      vz,      vz,      vz + sz, vz - sz,
+    vz + iz, vz - iz, vz + iz, vz - iz, vz + iz, vz - iz, vz + iz, vz - iz
   ];
   Plotly.restyle(plotEl, { x: [x], y: [y], z: [z] }, [vi]);
 }
@@ -1670,7 +1698,7 @@ function showEvent(eventId) {
     });
 
     // Track view changes from the Plotly updatemenu buttons so the vertex
-    // diamond size boost can switch between full (1.0×) and zoom (1.6×).
+    // diamond can be re-sized to match the new axis aspect.
     plotEl.removeAllListeners && plotEl.removeAllListeners('plotly_buttonclicked');
     plotEl.on('plotly_buttonclicked', function(data) {
       var label = (data && data.button && data.button.label) || '';
@@ -1820,7 +1848,7 @@ function applyThreshold() {
                 line: { color: '#ffffff', width: 1 } },
       name: 'Active (conf<' + thr.toFixed(2) + ')',
       legendgroup: 'upgrade_hits',
-      showlegend: false,
+      showlegend: true,
       hovertemplate: 'Active pred<' + thr.toFixed(2) +
         '<br>x=%{x:.1f}<br>y=%{y:.1f}<br>z=%{z:.1f}<extra></extra>',
     });

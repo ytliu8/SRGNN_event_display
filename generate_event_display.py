@@ -16,7 +16,7 @@ import numpy as np
 from scipy.spatial import cKDTree
 import plotly.graph_objects as go
 from event_display import load_results, load_geometry, plot_event_3d
-from symbol_shapes import _build_3d_diamond, _build_bubble_trail
+from symbol_shapes import _build_bubble_trail
 from event_display_template import build_html
 
 _parser = argparse.ArgumentParser(description="Generate SRGNN/vanilla event display HTML")
@@ -185,70 +185,30 @@ for eno in event_keys:
     # ── Build 3D plot ──
     fig, _ = plot_event_3d(evt, ic86_geo, ic93_geo, geo_xyz)
 
-    # ── Interaction vertex (3D neon-yellow 6-spiked diamond) ──
+    # ── Interaction vertex (cyan dot with yellow outline, 2 sizes bigger
+    # than the active-PMT dots) ──
     vx = evt.get("vertex_x", float("nan"))
     vy = evt.get("vertex_y", float("nan"))
     vz = evt.get("vertex_z", float("nan"))
     if not (np.isnan(vx) or np.isnan(vy) or np.isnan(vz)):
         vertex_info[str(eno)] = [float(vx), float(vy), float(vz)]
-        dx, dy, dz, di, dj, dk = _build_3d_diamond(
-            float(vx), float(vy), float(vz), size=VERTEX_BASE_SIZE)
-        # 3-tier directional lighting from L = (+x, +y, +z). Each face's
-        # dominant outward normal is along (spike_axis, secondary_axis);
-        # dot(normal, L) gives one of three values: +2 (lit), 0 (side),
-        # -2 (back-lit). Face-color shading instead of Plotly's lighting
-        # model — the latter blooms specular and washes out neon yellow.
-        highlight = '#f0ff66'  # bright lit faces (dot=+2)
-        midtone   = '#a0c800'  # side faces (dot=0)
-        shadow    = '#3a4a00'  # back-lit faces (dot=-2)
-        # Face order from _build_3d_diamond (4 faces per spike, spikes
-        # ordered +x, -x, +y, -y, +z, -z):
-        #   +x spike: T0=+y, T1=-z, T2=-y, T3=+z
-        #   -x spike: T4=+z, T5=-y, T6=-z, T7=+y
-        #   +y spike: T8=+x, T9=-z, T10=-x, T11=+z
-        #   -y spike: T12=+z, T13=-x, T14=-z, T15=+x
-        #   +z spike: T16=+y, T17=-x, T18=-y, T19=+x
-        #   -z spike: T20=+x, T21=-y, T22=-x, T23=+y
-        highlight_faces = {0, 3, 8, 11, 16, 19}  # both axis components positive
-        shadow_faces    = {5, 6, 13, 14, 21, 22}  # both axis components negative
-        def _shade(i):
-            if i in highlight_faces:
-                return highlight
-            if i in shadow_faces:
-                return shadow
-            return midtone
-        vertex_facecolors = [_shade(i) for i in range(24)]
-        fig.add_trace(go.Mesh3d(
-            x=dx, y=dy, z=dz,
-            i=di, j=dj, k=dk,
-            facecolor=vertex_facecolors,
-            flatshading=True,
+        fig.add_trace(go.Scatter3d(
+            x=[float(vx)], y=[float(vy)], z=[float(vz)],
+            mode='markers',
+            marker=dict(
+                symbol='square',
+                size=7,                          # active dots are size 5
+                color='#ffff00',                 # bright yellow (uniform)
+                line=dict(color='#ffff00', width=0),
+            ),
             name='Vertex',
             legendgroup='vertex',
-            showlegend=False,
+            showlegend=True,
             hovertemplate=(
                 f'Vertex<br>x={float(vx):.1f}'
                 f'<br>y={float(vy):.1f}'
                 f'<br>z={float(vz):.1f}<extra></extra>'
             ),
-        ))
-        # Mesh3d traces don't render a useful legend icon, so add a tiny
-        # diamond-marker Scatter3d at the same point to drive the legend
-        # entry. The marker sits inside the larger 3D diamond and is
-        # visually masked by it at any reasonable zoom.
-        fig.add_trace(go.Scatter3d(
-            x=[float(vx)], y=[float(vy)], z=[float(vz)],
-            mode='markers',
-            marker=dict(
-                symbol='diamond',
-                size=8,
-                color=highlight,
-                line=dict(color=shadow, width=1),
-            ),
-            name='Vertex',
-            legendgroup='vertex',
-            showlegend=True,
-            hoverinfo='skip',
         ))
 
         # ── Neutrino direction (thin dashed magenta line through vertex) ──

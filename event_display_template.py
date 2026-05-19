@@ -752,7 +752,7 @@ function applyThreshold() {{
   // Active PMTs ABOVE threshold — solid filled green circles
   if (actAbove.length > 0) {{
     var actName = SRGNN_MODE
-      ? ('Active (conf≥' + thr.toFixed(2) + ')')
+      ? ('Active ICU PMTs (conf≥' + thr.toFixed(2) + ')')
       : 'Active PMT Hits';
     var actHover = SRGNN_MODE
       ? ('Active pred≥' + thr.toFixed(2) +
@@ -764,7 +764,7 @@ function applyThreshold() {{
       y: actAbove.map(function(p) {{ return p[1]; }}),
       z: actAbove.map(function(p) {{ return p[2]; }}),
       customdata: actAbove.map(function(p) {{ return [0, p[7]]; }}),
-      marker: {{ size: 5, color: '#00ff66', opacity: 1.0,
+      marker: {{ size: 4, color: '#00ff66', opacity: 1.0,
                 symbol: 'circle',
                 line: {{ color: '#20ff80', width: 1 }} }},
       name: actName,
@@ -786,19 +786,18 @@ function applyThreshold() {{
       y: actBelow.map(function(p) {{ return p[1]; }}),
       z: actBelow.map(function(p) {{ return p[2]; }}),
       customdata: actBelow.map(function(p) {{ return [0, p[7]]; }}),
-      marker: {{ size: 6, color: '#ffffff', opacity: 1.0,
+      marker: {{ size: 4, color: '#ffffff', opacity: 1.0,
                 symbol: 'circle',
                 line: {{ color: '#ffffff', width: 1 }} }},
-      name: 'Active (conf<' + thr.toFixed(2) + ')',
+      name: 'Active ICU PMTs (conf<' + thr.toFixed(2) + ')',
       legendgroup: 'upgrade_hits',
-      showlegend: false,
+      showlegend: true,
       hovertemplate: 'Active pred<' + thr.toFixed(2) +
         '<br>x=%{{x:.1f}}<br>y=%{{y:.1f}}<br>z=%{{z:.1f}}<extra></extra>',
     }});
   }}
 
-  // Inactive predicted PMTs (SRGNN only — vanilla has no inactive data and
-  // we never show grey inactive dots).
+  // Inactive predicted PMTs above threshold (red) — SRGNN only.
   if (SRGNN_MODE && inactAbove.length > 0) {{
     newTraces.push({{
       type: 'scatter3d', mode: 'markers',
@@ -806,9 +805,9 @@ function applyThreshold() {{
       y: inactAbove.map(function(p) {{ return p[1]; }}),
       z: inactAbove.map(function(p) {{ return p[2]; }}),
       customdata: inactAbove.map(function(p) {{ return [0, p[7]]; }}),
-      marker: {{ size: 5, color: '#ff0066', opacity: 0.95,
+      marker: {{ size: 4, color: '#ff0066', opacity: 0.95,
                 line: {{ color: 'rgba(255,255,255,0.4)', width: 1 }} }},
-      name: 'Inactive pred (conf≥' + thr.toFixed(2) + ')',
+      name: 'Inactive ICU PMTs (conf≥' + thr.toFixed(2) + ')',
       legendgroup: 'inactive_pred',
       showlegend: true,
       hovertemplate: 'Inactive pred≥' + thr.toFixed(2) +
@@ -816,6 +815,29 @@ function applyThreshold() {{
     }});
     var inactBubbles = buildBubbleTrace(inactAbove, [255, 50, 70], 'Orient (inactive pred)', 'inactive_pred');
     if (inactBubbles) newTraces.push(inactBubbles);
+  }}
+
+  // Inactive predicted PMTs below threshold (grey) — SRGNN only.
+  // Replaces the static base "Inactive Upgrade PMTs" trace (hidden below)
+  // so we get a threshold-aware legend entry.
+  if (SRGNN_MODE) {{
+    var inactBelow = pmtData.inactive.filter(function(p) {{ return p[3] < thr; }});
+    if (inactBelow.length > 0) {{
+      newTraces.push({{
+        type: 'scatter3d', mode: 'markers',
+        x: inactBelow.map(function(p) {{ return p[0]; }}),
+        y: inactBelow.map(function(p) {{ return p[1]; }}),
+        z: inactBelow.map(function(p) {{ return p[2]; }}),
+        customdata: inactBelow.map(function(p) {{ return [0, p[7]]; }}),
+        marker: {{ size: 4, color: '#8c8ca0', opacity: 0.6,
+                  line: {{ color: 'rgba(255,255,255,0.25)', width: 1 }} }},
+        name: 'Inactive ICU PMTs (conf<' + thr.toFixed(2) + ')',
+        legendgroup: 'inactive_below',
+        showlegend: true,
+        hovertemplate: 'Inactive pred<' + thr.toFixed(2) +
+          '<br>x=%{{x:.1f}}<br>y=%{{y:.1f}}<br>z=%{{z:.1f}}<extra></extra>',
+      }});
+    }}
   }}
 
   // Copy base traces but hide the original "Upgrade PMT Hits (true)" trace
@@ -827,7 +849,7 @@ function applyThreshold() {{
     var tn = t.name || "";
     if (tn === "Upgrade PMT Hits (true)") {{
       t.visible = false;
-    }} else if (!SRGNN_MODE && tn === "Inactive Upgrade PMTs") {{
+    }} else if (tn === "Inactive Upgrade PMTs") {{
       t.visible = false;
     }}
     baseTraces.push(t);
